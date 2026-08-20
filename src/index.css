@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/* react-pdf container & canvas styling fixes */
+.react-pdf__Document {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  width: 100% !important;
+}
+
+.react-pdf__Page {
+  position: relative !important;
+  display: flex !important;
+  justify-content: center !important;
+  margin-bottom: 2rem !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  background-color: #ffffff !important;
+  border-radius: 6px !important;
+  overflow: visible !important;
+}
+
+.react-pdf__Page__canvas {
+  max-width: 100% !important;
+  height: auto !important;
+  display: block !important;
+  margin: 0 auto !important;
+}
+
+.react-pdf__Page__textContent {
+  top: 0 !important;
+  left: 0 !important;
+  transform-origin: top left !important;
+  opacity: 0.8;
+}
+
+.react-pdf__Page__annotations {
+  height: 100% !important;
+}
+

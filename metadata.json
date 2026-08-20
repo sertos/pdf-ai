@@ -1,0 +1,11 @@
+{
+  "id": "pdf-ai",
+  "name": "Solvra PDF Genius",
+  "category": "Ofimática",
+  "description": "Solvra PDF Genius es una plataforma SaaS impulsada por inteligencia artificial diseñada para extraer, analizar y resumir documentos PDF automáticamente. La aplicación permite cargar archivos y obtener resúmenes inteligentes, insights relevantes y respuestas automáticas sobre el contenido en segundos desde una interfaz moderna, intuitiva y profesional.\n\nLa plataforma utiliza IA para identificar temas importantes, extraer texto, detectar datos clave y responder preguntas sobre documentos cargados. Además, incluye visor interactivo de PDFs, análisis de múltiples archivos, búsqueda inteligente y exportación de resúmenes en formatos PDF o Word.\n\nFunciones principales:\n- Carga de archivos PDF mediante drag & drop.\n- Generación automática de resúmenes.\n- Extracción de insights y datos clave.\n- Búsqueda inteligente dentro de documentos.\n- Asistente IA para preguntas sobre PDFs.\n- Análisis de múltiples documentos.\n- Exportación de reportes y resúmenes.\n- Visor interactivo con destacados inteligentes.\n\nBeneficios:\n- Ahorra tiempo en lectura y análisis.\n- Simplifica documentos complejos.\n- Mejora la productividad profesional.\n- Automatiza extracción de información.\n- Facilita la toma de decisiones mediante inteligencia artificial.",
+  "downloads": 8,
+  "rating": 4,
+  "reviews": 8,
+  "images": ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg", "6.jpg"],
+  "type": "saas"
+}
