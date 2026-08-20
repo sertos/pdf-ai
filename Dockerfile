@@ -1,14 +1,14 @@
-FROM node:18-slim AS build
+FROM node:20-alpine AS build
 WORKDIR /app
 
-# Copiar manifiesto de dependencias
+# Copiar archivos de dependencias
 COPY package*.json ./
 
-# Forzar la instalación del binario específico para Linux de Tailwind v4
+# Limpiar cache e instalar el binario nativo de Tailwind v4 para Alpine Linux (musl)
 RUN npm install
-RUN npm install @tailwindcss/oxide-linux-x64-gnu
+RUN npm install @tailwindcss/oxide-linux-x64-musl
 
-# Copiar el código fuente
+# Copiar el resto del código
 COPY . .
 
 # Variables y Build
@@ -17,7 +17,7 @@ ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
 
 RUN npm run build
 
-# Etapa final Nginx
+# Etapa final de producción con Nginx
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 RUN sed -i 's/listen  *80;/listen 8080;/g' /etc/nginx/conf.d/default.conf
