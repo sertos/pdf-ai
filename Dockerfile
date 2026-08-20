@@ -1,23 +1,21 @@
-FROM node:20-alpine AS build
+FROM node:20-slim AS build
 WORKDIR /app
 
-# Instalar pnpm de forma global
-RUN npm install -g pnpm
-
-# Copiar manifiestos
-COPY package*.json ./
-
-# Instalar dependencias usando pnpm (resuelve los binarios opcionales para Linux automáticamente)
-RUN pnpm install
-
-# Copiar el resto del código
+# 1. Copiamos TODO el proyecto primero
 COPY . .
 
-# Variables y Build
+# 2. Eliminamos cualquier node_modules o package-lock.json de Windows que se haya colado
+RUN rm -rf node_modules package-lock.json
+
+# 3. Instalamos todo desde cero para que Node descargue los binarios puros de Linux
+RUN npm install
+
+# 4. Inyectamos la clave de Gemini
 ARG VITE_GEMINI_API_KEY
 ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
 
-RUN pnpm run build
+# 5. Ejecutamos el build (ahora sí, con el entorno 100% Linux)
+RUN npm run build
 
 # Etapa final Nginx
 FROM nginx:alpine
