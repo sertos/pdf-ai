@@ -4,15 +4,22 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import multer from "multer";
 import fs from "fs";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads", { recursive: true });
 }
 
-const app = express();
+// Inicializar Firebase Admin
+if (getApps().length === 0) {
+  initializeApp();
+}
+const db = getFirestore();
 
-// Cloud Run pasa el puerto dinámicamente en process.env.PORT (usualmente 8080)
+const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const MAX_FREE_QUERIES = 5;
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 30 * 1024 * 1024 } });
@@ -20,7 +27,6 @@ const upload = multer({ storage, limits: { fileSize: 30 * 1024 * 1024 } });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Soporte para leer la API Key desde ambas variables posibles
 const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
 const ai = new GoogleGenAI({
@@ -32,7 +38,43 @@ const ai = new GoogleGenAI({
   }
 });
 
-// API routes FIRST
+// Función para obtener la IP real del usuario
+function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const ipList = typeof forwarded === 'string' ? forwarded : forwarded[0];
+    return ipList.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || 'unknown';
+}
+
+// Función middleware para verificar y contabilizar uso persistente
+async function checkAndIncrementUsage(ip: string): Promise<{ allowed: boolean; remaining: number }> {
+  const cleanIp = ip.replace(/[^a-zA-Z0-9]/g, "_"); // Sanitizar IP para usar como ID de doc
+  const docRef = db.collection("demo_usage").doc(cleanIp);
+  const docSnap = await docRef.get();
+
+  if (docSnap.exists) {
+    const data = docSnap.data();
+    const count = data?.count || 0;
+    if (count >= MAX_FREE_QUERIES) {
+      return { allowed: false, remaining: 0 };
+    }
+    await docRef.update({
+      count: FieldValue.increment(1),
+      lastQuery: FieldValue.serverTimestamp()
+    });
+    return { allowed: true, remaining: MAX_FREE_QUERIES - (count + 1) };
+  } else {
+    await docRef.set({
+      count: 1,
+      firstQuery: FieldValue.serverTimestamp(),
+      lastQuery: FieldValue.serverTimestamp()
+    });
+    return { allowed: true, remaining: MAX_FREE_QUERIES - 1 };
+  }
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -43,10 +85,21 @@ app.post("/api/analyze-pdf", upload.single('document'), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    const clientIp = getClientIp(req);
+    const usage = await checkAndIncrementUsage(clientIp);
+
+    if (!usage.allowed) {
+      return res.json({
+        summary: "⚠️ **Límite de la demo alcanzado**: Has completado las 5 consultas/análisis gratuitos disponibles en esta demostración de Solvra PDF Genius. Para solicitar un acceso ilimitado o corporativo, contáctanos.",
+        insights: ["Límite de uso gratuito alcanzado (5/5)."],
+        actionItems: ["Contactar al equipo de Solvra para obtener acceso completo."],
+        keyTopics: ["Límite de Demo"]
+      });
+    }
+
     const lang = req.body.lang || 'es';
     const base64Data = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'application/pdf';
-
     const targetLang = lang === 'en' ? 'English' : 'Spanish';
 
     const prompt = `Analyze this PDF document thoroughly and return a pure JSON object response (no markdown code blocks, no trailing text).
@@ -91,14 +144,11 @@ Required JSON structure:
 
       const jsonText = response.text?.trim() || "";
       if (jsonText) {
-        // Clean markdown backticks if any
         const cleanedJson = jsonText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
         result = JSON.parse(cleanedJson);
       }
     } catch (genAiError: any) {
       console.error("Gemini direct analysis error:", genAiError);
-
-      // Detectar falta de créditos / cuota agotada (Error 402 / RESOURCE_EXHAUSTED)
       const errorStr = JSON.stringify(genAiError) || genAiError?.message || "";
       if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits")) {
         result = {
@@ -110,7 +160,6 @@ Required JSON structure:
       }
     }
 
-    // Fallback if parsing or AI fails
     if (!result) {
       result = {
         summary: `Documento procesado: ${req.file.originalname}. Contiene información relevante lista para consultas.`,
@@ -150,21 +199,28 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "Invalid messages format" });
     }
 
+    const clientIp = getClientIp(req);
+    const usage = await checkAndIncrementUsage(clientIp);
+
+    if (!usage.allowed) {
+      const limitMsg = lang === 'en'
+        ? "⚠️ **Demo limit reached**: You have used all 5 free queries allowed for this demonstration. Please contact Solvra to get full access."
+        : "⚠️ **Límite de la demo alcanzado**: Has completado las 5 consultas gratuitas permitidas en esta demostración. Contacta al equipo de Solvra para obtener un acceso sin restricciones.";
+      return res.json({ content: limitMsg });
+    }
+
     const languageName = lang === 'en' ? 'English' : 'Spanish';
 
-    // Build conversation for Gemini
     const systemInstruction = `You are Solvra PDF Genius AI, an expert assistant in analyzing and interpreting PDF documents. 
 Your goal is to answer clearly, accurately, professionally, and helpfully to the user's questions about the uploaded document or document intelligence.
 Respond in ${languageName} unless the user explicitly switches language.
 ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}` : ''}`;
 
-    // Get the latest user prompt
     const lastUserMsg = [...messages].reverse().find((m: any) => m.role === 'user');
     const userPrompt = lastUserMsg ? lastUserMsg.content : "Resumen del documento";
 
     const parts: any[] = [];
 
-    // Clean base64 if provided
     let cleanBase64: string | null = null;
     if (fileBase64 && typeof fileBase64 === 'string') {
       cleanBase64 = fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '').trim();
@@ -210,7 +266,6 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
         return res.json({ content: creditMsg });
       }
 
-      // Reintento de solo texto si el error no fue por falta de crédito...
       try {
         const textResponse = await ai.models.generateContent({
           model: 'gemini-3.8-flash',
@@ -235,7 +290,6 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
         }
       }
 
-      // Fallback genérico
       const fallbackReply = lang === 'en'
         ? `Based on the uploaded document context: ${documentSummary ? documentSummary.substring(0, 200) + '...' : 'Please ask a specific question.'}`
         : `Basado en el contexto del documento: ${documentSummary ? documentSummary.substring(0, 200) + '...' : 'Por favor realiza una pregunta específica.'}`;
@@ -264,7 +318,6 @@ async function startServer() {
     });
   }
 
-  // Escucha en 0.0.0.0 y utiliza la variable PORT definida por Cloud Run
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
   });
