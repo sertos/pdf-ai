@@ -95,8 +95,19 @@ Required JSON structure:
         const cleanedJson = jsonText.replace(/^```json\s*/, '').replace(/```$/, '').trim();
         result = JSON.parse(cleanedJson);
       }
-    } catch (genAiError) {
+    } catch (genAiError: any) {
       console.error("Gemini direct analysis error:", genAiError);
+
+      // Detectar falta de créditos / cuota agotada (Error 402 / RESOURCE_EXHAUSTED)
+      const errorStr = JSON.stringify(genAiError) || genAiError?.message || "";
+      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits")) {
+        result = {
+          summary: "⚠️ **Servicio no disponible por falta de créditos**: La cuenta de AI Studio no tiene saldo prepago disponible para procesar el documento. Por favor, revisa la facturación del proyecto.",
+          insights: ["Créditos de API de Gemini agotados."],
+          actionItems: ["Cargar créditos en la consola de Google AI Studio."],
+          keyTopics: ["Error de Facturación"]
+        };
+      }
     }
 
     // Fallback if parsing or AI fails
@@ -188,10 +199,18 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
       const replyText = response.text || (lang === 'en' ? "Could not generate a response." : "No pude generar una respuesta.");
       return res.json({ content: replyText });
 
-    } catch (genAiError) {
-      console.error("Gemini chat error with document parts, retrying with text-only context:", genAiError);
+    } catch (genAiError: any) {
+      console.error("Gemini chat error:", genAiError);
       
-      // Fallback 1: Retry Gemini with text-only prompt and document context
+      const errorStr = JSON.stringify(genAiError) || genAiError?.message || "";
+      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits")) {
+        const creditMsg = lang === 'en'
+          ? "⚠️ The AI service is currently unavailable due to depleted API credits in Google AI Studio. Please check your billing settings."
+          : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos en Google AI Studio. Por favor, revisa la facturación de la cuenta.";
+        return res.json({ content: creditMsg });
+      }
+
+      // Reintento de solo texto si el error no fue por falta de crédito...
       try {
         const textResponse = await ai.models.generateContent({
           model: 'gemini-3.8-flash',
@@ -205,11 +224,18 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
         if (textResponse.text) {
           return res.json({ content: textResponse.text });
         }
-      } catch (retryError) {
+      } catch (retryError: any) {
         console.error("Gemini text retry error:", retryError);
+        const retryErrStr = JSON.stringify(retryError) || retryError?.message || "";
+        if (retryErrStr.includes("402") || retryErrStr.includes("RESOURCE_EXHAUSTED") || retryErrStr.includes("prepayment credits")) {
+          const creditMsg = lang === 'en'
+            ? "⚠️ The AI service is currently unavailable due to depleted API credits in Google AI Studio."
+            : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos en Google AI Studio.";
+          return res.json({ content: creditMsg });
+        }
       }
 
-      // Fallback 2: Contextual fallback message if Gemini API is unreachable
+      // Fallback genérico
       const fallbackReply = lang === 'en'
         ? `Based on the uploaded document context: ${documentSummary ? documentSummary.substring(0, 200) + '...' : 'Please ask a specific question.'}`
         : `Basado en el contexto del documento: ${documentSummary ? documentSummary.substring(0, 200) + '...' : 'Por favor realiza una pregunta específica.'}`;
