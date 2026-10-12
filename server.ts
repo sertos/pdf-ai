@@ -10,15 +10,21 @@ if (!fs.existsSync("uploads")) {
 }
 
 const app = express();
-const PORT = 3000;
+
+// Cloud Run pasa el puerto dinámicamente en process.env.PORT (usualmente 8080)
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 30 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Soporte para leer la API Key desde ambas variables posibles
+const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+  apiKey: apiKey,
   httpOptions: {
     headers: {
       'User-Agent': 'aistudio-build'
@@ -232,10 +238,10 @@ async function startServer() {
     });
   }
 
+  // Escucha en 0.0.0.0 y utiliza la variable PORT definida por Cloud Run
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
 startServer();
-
