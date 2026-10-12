@@ -69,7 +69,7 @@ Required JSON structure:
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.8-flash',
         contents: [
           {
             role: 'user',
@@ -172,7 +172,7 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.8-flash',
         contents: [
           {
             role: 'user',
@@ -194,7 +194,7 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
       // Fallback 1: Retry Gemini with text-only prompt and document context
       try {
         const textResponse = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-3.8-flash',
           contents: userPrompt,
           config: {
             systemInstruction: `${systemInstruction}\nContext summary: ${documentSummary || 'PDF Document'}`,
