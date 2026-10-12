@@ -1,26 +1,32 @@
-# Usamos la imagen COMPLETA de Node (sin -slim ni -alpine) para tener todas las librerías nativas de Linux
+# 1. Etapa de Construcción (Build)
 FROM node:20 AS build
+
 WORKDIR /app
 
-# Copiamos manifiestos
 COPY package*.json ./
-
-# Instalamos de forma limpia
 RUN npm install
 
-# Copiamos el resto del código
 COPY . .
 
-# Variables y Build
-ARG VITE_GEMINI_API_KEY
-ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
-
+# Compilar la aplicación de Vite y TypeScript
 RUN npm run build
 
-# Etapa final Nginx (esta sí sigue siendo ultraligera)
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-RUN sed -i 's/listen  *80;/listen 8080;/g' /etc/nginx/conf.d/default.conf
+# 2. Etapa Final de Ejecución (Node.js Express Server)
+FROM node:20-slim
 
+WORKDIR /app
+
+COPY package*.json ./
+# Instalamos solo dependencias de producción para mantener el contenedor liviano
+RUN npm install --only=production
+
+# Copiamos la compilación del frontend y el archivo del servidor
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.ts ./
+COPY --from=build /app/tsconfig.json ./
+
+# Cloud Run utiliza por defecto la variable PORT (usualmente 8080)
 EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+
+# Ejecutamos el servidor backend con tsx o node
+CMD ["npx", "tsx", "server.ts"]
