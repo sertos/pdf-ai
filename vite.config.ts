@@ -20,10 +20,16 @@ export default defineConfig(({mode}) => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       host: true,
       // Pasa el dominio exacto en un Array:
-      allowedHosts: ['pdf-ai-971636503516.us-central1.run.app']
+     allowedHosts: [
+  'pdf-ai-971636503516.us-central1.run.app',
+  '.run.app'
+]
     },
     preview: {
-      allowedHosts: ['pdf-ai-971636503516.us-central1.run.app']
+      allowedHosts: [
+  'pdf-ai-971636503516.us-central1.run.app',
+  '.run.app'
+]
     }
   };
 });
