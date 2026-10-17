@@ -27,7 +27,8 @@ const upload = multer({ storage, limits: { fileSize: 30 * 1024 * 1024 } });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+// Prevenir caída global si la clave API no está definida momentáneamente
+const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "MISSING_KEY";
 
 const ai = new GoogleGenAI({
   apiKey: apiKey,
@@ -48,30 +49,36 @@ function getClientIp(req: express.Request): string {
   return req.socket.remoteAddress || 'unknown';
 }
 
-// Función middleware para verificar y contabilizar uso persistente
+// Función middleware CORREGIDA: Ahora tolera fallos en Firebase sin romper el servidor
 async function checkAndIncrementUsage(ip: string): Promise<{ allowed: boolean; remaining: number }> {
-  const cleanIp = ip.replace(/[^a-zA-Z0-9]/g, "_"); // Sanitizar IP para usar como ID de doc
-  const docRef = db.collection("demo_usage").doc(cleanIp);
-  const docSnap = await docRef.get();
+  try {
+    const cleanIp = ip.replace(/[^a-zA-Z0-9]/g, "_"); // Sanitizar IP para usar como ID de doc
+    const docRef = db.collection("demo_usage").doc(cleanIp);
+    const docSnap = await docRef.get();
 
-  if (docSnap.exists) {
-    const data = docSnap.data();
-    const count = data?.count || 0;
-    if (count >= MAX_FREE_QUERIES) {
-      return { allowed: false, remaining: 0 };
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const count = data?.count || 0;
+      if (count >= MAX_FREE_QUERIES) {
+        return { allowed: false, remaining: 0 };
+      }
+      await docRef.update({
+        count: FieldValue.increment(1),
+        lastQuery: FieldValue.serverTimestamp()
+      });
+      return { allowed: true, remaining: MAX_FREE_QUERIES - (count + 1) };
+    } else {
+      await docRef.set({
+        count: 1,
+        firstQuery: FieldValue.serverTimestamp(),
+        lastQuery: FieldValue.serverTimestamp()
+      });
+      return { allowed: true, remaining: MAX_FREE_QUERIES - 1 };
     }
-    await docRef.update({
-      count: FieldValue.increment(1),
-      lastQuery: FieldValue.serverTimestamp()
-    });
-    return { allowed: true, remaining: MAX_FREE_QUERIES - (count + 1) };
-  } else {
-    await docRef.set({
-      count: 1,
-      firstQuery: FieldValue.serverTimestamp(),
-      lastQuery: FieldValue.serverTimestamp()
-    });
-    return { allowed: true, remaining: MAX_FREE_QUERIES - 1 };
+  } catch (firebaseError) {
+    console.error("Firebase Usage Tracking Error (Bypassing limit):", firebaseError);
+    // Si Firestore no está configurado, permitimos el uso para no lanzar un Error 500
+    return { allowed: true, remaining: 999 };
   }
 }
 
@@ -150,12 +157,12 @@ Required JSON structure:
     } catch (genAiError: any) {
       console.error("Gemini direct analysis error:", genAiError);
       const errorStr = JSON.stringify(genAiError) || genAiError?.message || "";
-      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits")) {
+      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits") || errorStr.includes("MISSING_KEY")) {
         result = {
-          summary: "⚠️ **Servicio no disponible por falta de créditos**: La cuenta de AI Studio no tiene saldo prepago disponible para procesar el documento. Por favor, revisa la facturación del proyecto.",
-          insights: ["Créditos de API de Gemini agotados."],
-          actionItems: ["Cargar créditos en la consola de Google AI Studio."],
-          keyTopics: ["Error de Facturación"]
+          summary: "⚠️ **Servicio no disponible**: La cuenta de AI Studio no tiene saldo prepago disponible o falta la clave API. Por favor, revisa la facturación del proyecto.",
+          insights: ["Créditos de API de Gemini agotados o clave faltante."],
+          actionItems: ["Revisar variables de entorno y facturación en Google Cloud."],
+          keyTopics: ["Error de Configuración"]
         };
       }
     }
@@ -259,10 +266,10 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
       console.error("Gemini chat error:", genAiError);
       
       const errorStr = JSON.stringify(genAiError) || genAiError?.message || "";
-      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits")) {
+      if (errorStr.includes("402") || errorStr.includes("RESOURCE_EXHAUSTED") || errorStr.includes("prepayment credits") || errorStr.includes("MISSING_KEY")) {
         const creditMsg = lang === 'en'
-          ? "⚠️ The AI service is currently unavailable due to depleted API credits in Google AI Studio. Please check your billing settings."
-          : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos en Google AI Studio. Por favor, revisa la facturación de la cuenta.";
+          ? "⚠️ The AI service is currently unavailable due to depleted API credits or missing API Key. Please check your settings."
+          : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos o clave API faltante. Por favor revisa la configuración.";
         return res.json({ content: creditMsg });
       }
 
@@ -282,10 +289,10 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
       } catch (retryError: any) {
         console.error("Gemini text retry error:", retryError);
         const retryErrStr = JSON.stringify(retryError) || retryError?.message || "";
-        if (retryErrStr.includes("402") || retryErrStr.includes("RESOURCE_EXHAUSTED") || retryErrStr.includes("prepayment credits")) {
+        if (retryErrStr.includes("402") || retryErrStr.includes("RESOURCE_EXHAUSTED") || retryErrStr.includes("prepayment credits") || retryErrStr.includes("MISSING_KEY")) {
           const creditMsg = lang === 'en'
-            ? "⚠️ The AI service is currently unavailable due to depleted API credits in Google AI Studio."
-            : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos en Google AI Studio.";
+            ? "⚠️ The AI service is currently unavailable due to depleted API credits or missing API Key."
+            : "⚠️ El servicio de IA no está disponible temporalmente por falta de créditos o clave API faltante.";
           return res.json({ content: creditMsg });
         }
       }
@@ -328,4 +335,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Failed to start pdf-ai server:", err);
+  process.exit(1);
+});
