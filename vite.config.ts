@@ -17,11 +17,15 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      host: true, // Escucha en todas las interfaces de red para Cloud Run
+      allowedHosts: true, // Permite cualquier dominio dinámico generado
     },
+    preview: {
+      allowedHosts: true, // Permite hosts externos si se usa vite preview
+    }
   };
 });
-
