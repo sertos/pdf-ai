@@ -306,9 +306,14 @@ ${documentSummary ? `\nCurrent document summary and context:\n${documentSummary}
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
+  server: {
+    middlewareMode: true,
+    allowedHosts: [
+      'pdf-ai-971636503516.us-central1.run.app'
+    ],
+  },
+  appType: "spa",
+});
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
